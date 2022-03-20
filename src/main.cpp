@@ -115,19 +115,26 @@ void checkReceive() {
 }
 
 
-void trackPos(uint32_t time,uint16_t target,uint16_t delta)
+uint32_t trackPos(uint32_t time,uint16_t target,uint16_t delta)
 {
-uint32_t s = millis();  
+uint32_t timeout = millis()+time;
+uint32_t start = millis();  
+int counter = 0;
 
    Serial.print(F("tracking Target: "));Serial.println(target);
-   while (millis()-s < time ) {
-       //delay(20);
+   while (millis() < timeout ) {
        uint16_t v=readServoValue(reg_pos);
-       if (v==0) return; // Servo not responding...
+       counter++;
+       if (v==0) return millis() - start; // Servo not responding...
        Serial.print(" ");Serial.print(v);
-       if (abs(target-v)<delta) return; // Target position reached
-
-   }  
+       if (abs(target-v)<delta) {
+          uint32_t delta = millis() - start;
+          Serial.print(F("\nTarget reached after: "));Serial.print(delta);Serial.print(F(" ms loops: "));
+          Serial.println(counter);
+          return delta; // Target position reached
+       } 
+   }
+   return time;  
 }
 
 void printInfo()
@@ -159,6 +166,7 @@ void setup() {
 
 
 void loop() {
+uint32_t t;   
 
     if (CAN.getMode()==MODE_LOOPBACK) {
        Serial.println(F("\nLoopback test"));
@@ -173,12 +181,12 @@ void loop() {
      
       printInfo();
       setServoPos(servo_left);
-      trackPos(100,servo_left,100);
-      delay(1000);
+      t=trackPos(400,servo_left,100);
+      delay(1000L-t);
       Serial.println();
       setServoPos(servo_right);
-      trackPos(100,servo_right,100);
-      delay(1000);
+      t=trackPos(400,servo_right,100);
+      delay(1000L-t);
       Serial.println();
 
     }
