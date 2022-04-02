@@ -5,7 +5,8 @@
 const int SPI_CS_PIN = 10;
 mcp2515_can CAN(SPI_CS_PIN); // Set CS pin
 
-const int CAN_INT_PIN = 2;
+const int CAN_INT_PIN = 2; // Connect CAN Board Interrupt pin to Pin 2
+const int PWM_INT_PIN = 3; // Connect PWM Input (e.g. Servo Tester) to Pin 3
 
 const byte myID = 0x0;
 
@@ -25,10 +26,31 @@ enum servo_pos {
    servo_right = 5300
 };
 
-static volatile int flagRecv = 0;
+// Interrupt Handlers
+
+volatile int flagRecv = 0;
 
 void MCP2515_ISR() {
    flagRecv = 1;
+}
+
+// PWM
+
+volatile int pwm_value = 0;
+volatile int prev_time = 0;
+int pwm_interrupt = digitalPinToInterrupt(PWM_INT_PIN);
+
+void pwm_falling(); // forward
+
+void pwm_rising() {
+  attachInterrupt(pwm_interrupt, pwm_falling, FALLING);
+  prev_time = micros();
+}
+ 
+void pwm_falling() {
+  attachInterrupt(pwm_interrupt, pwm_rising, RISING);
+  pwm_value = micros()-prev_time;
+ 
 }
 
 
@@ -126,7 +148,7 @@ int counter = 0;
        uint16_t v=readServoValue(reg_pos);
        counter++;
        if (v==0) return millis() - start; // Servo not responding...
-       Serial.print(" ");Serial.print(v);
+       //Serial.print(" ");Serial.print(v);
        if (abs(target-v)<delta) {
           uint32_t delta = millis() - start;
           Serial.print(F("\nTarget reached after: "));Serial.print(delta);Serial.print(F(" ms loops: "));
@@ -150,7 +172,7 @@ void setup() {
    Serial.println(F("CANArduino 0.0"));
   
    attachInterrupt(digitalPinToInterrupt(CAN_INT_PIN), MCP2515_ISR, FALLING);
-   // init can bus : baudrate = 500k
+   attachInterrupt(pwm_interrupt, pwm_rising, RISING); 
    while (CAN_OK != CAN.begin(CAN_1000KBPS,MCP_8MHz)) {
       Serial.println("CAN init fail, retry...");
       delay(100);
@@ -164,6 +186,10 @@ void setup() {
    //CAN.setMode(MODE_LOOPBACK);
 }
 
+uint16_t convertPwm(int pwmv)
+{
+   return (uint16_t)((float)(pwmv-1500) * 3.43 + 3000.0); 
+}
 
 void loop() {
 uint32_t t;   
@@ -175,19 +201,27 @@ uint32_t t;
        delay(1000);
     }
     else {
-      
-      // byte res=sendAndPrint(readvoltage,sizeof(readvoltage)); 
-      // if (res==CAN_OK) checkReceive();    
+           
      
-      printInfo();
-      setServoPos(servo_left);
-      t=trackPos(400,servo_left,100);
-      delay(1000L-t);
-      Serial.println();
-      setServoPos(servo_right);
-      t=trackPos(400,servo_right,100);
-      delay(1000L-t);
-      Serial.println();
+      Serial.print("PWM: ");Serial.println(pwm_value);
+      if (pwm_value==0) { // Servo Test mode
+         printInfo();
+         setServoPos(servo_left);
+         t=trackPos(400,servo_left,100);
+         delay(1000L-t);
+         Serial.println();
+         setServoPos(servo_right);
+         t=trackPos(400,servo_right,100);
+         delay(1000L-t);
+         Serial.println();
+      } else {
+        // PWM Servo Tester mode
+         uint16_t v= convertPwm(pwm_value);
+         Serial.println(v);         
+         setServoPos(v);
+         
+      }
+      
 
     }
 
